@@ -22,7 +22,10 @@ from transformers import PretrainedConfig, PreTrainedTokenizer, PreTrainedTokeni
 from verl.workers.rollout.tokenizer import HybridEngineBaseTokenizer
 from vllm import LLM
 from vllm.outputs import EmbeddingRequestOutput, RequestOutput
-from vllm.utils import Counter
+try:
+    from vllm.utils import Counter
+except ImportError:
+    from collections import Counter
 
 from .arg_utils import EngineArgs
 from .llm_engine_sp import LLMEngine
