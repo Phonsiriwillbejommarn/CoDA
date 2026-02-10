@@ -17,7 +17,13 @@ import os
 from dataclasses import dataclass
 
 from transformers import PretrainedConfig
-from vllm.config import EngineConfig
+try:
+    from vllm.config import EngineConfig
+except ImportError:
+    # vllm >= 0.14.0 likely removed EngineConfig in favor of separate configs or different structure
+    # We will define a dummy or use Any for type hinting, and let runtime handle the object returned by super()
+    from typing import Any as EngineConfig
+
 from vllm.engine.arg_utils import EngineArgs
 
 from .config import LoadConfig, ModelConfig

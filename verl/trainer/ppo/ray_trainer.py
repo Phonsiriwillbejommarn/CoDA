@@ -442,7 +442,7 @@ class RayPPOTrainer(object):
                                          return_raw_chat=self.config.data.get('return_raw_chat', False),
                                          truncation='error',
                                          model_type=self.config.data.model_type)
-        if self.config.data.train_data_num is not None:
+        if getattr(self.config.data, 'train_data_num', None) is not None:
             if self.config.data.train_data_num > len(self.train_dataset.dataframe):
                 logging.warning(f"Training dataset size is smaller than desired size. Using the dataset as the original size {len(self.train_dataset.dataframe)}")
             else:
@@ -463,7 +463,7 @@ class RayPPOTrainer(object):
                                        return_raw_chat=self.config.data.get('return_raw_chat', False),
                                        truncation='error',
                                        model_type=self.config.data.model_type)
-        if self.config.data.val_data_num is not None:
+        if getattr(self.config.data, 'val_data_num', None) is not None:
             if self.config.data.val_data_num > len(self.val_dataset.dataframe):
                 logging.warning(f"Validation dataset size is smaller than desired size. Using the dataset as the original size {len(self.val_dataset.dataframe)}")
             else:
