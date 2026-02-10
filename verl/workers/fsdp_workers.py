@@ -91,7 +91,7 @@ class ActorRolloutRefWorker(Worker):
             self._is_offload_optimizer = fsdp_config.get('optimizer_offload', False)
         elif self._is_ref:
             # TODO: it seems that manual offload is slowly than FSDP offload
-            self._is_offload_param = self.config.ref.fsdp_config.get('param_offload', False)
+            self._is_offload_param = getattr(self.config.ref, 'fsdp_config', {}).get('param_offload', False)
 
         # normalize config
         if self._is_actor:
@@ -297,7 +297,7 @@ class ActorRolloutRefWorker(Worker):
             # we need the model for actor and rollout
             if self._is_actor:
                 optim_config = self.config.actor.optim
-                fsdp_config = self.config.actor.fsdp_config
+                fsdp_config = getattr(self.config.actor, 'fsdp_config', OmegaConf.create())
             else:
                 optim_config = None
                 fsdp_config = OmegaConf.create()
@@ -334,7 +334,7 @@ class ActorRolloutRefWorker(Worker):
 
         if self._is_ref:
             self.ref_module_fsdp = self._build_model_optimizer(model_path=self.config.model.path,
-                                                               fsdp_config=self.config.ref.fsdp_config,
+                                                               fsdp_config=getattr(self.config.ref, 'fsdp_config', OmegaConf.create()),
                                                                optim_config=None,
                                                                override_model_config=override_model_config,
                                                                use_remove_padding=use_remove_padding,
@@ -559,9 +559,10 @@ class CriticWorker(Worker):
         self.ulysses_sharding_manager = FSDPUlyssesShardingManager(self.ulysses_device_mesh)
 
         # set FSDP offload params
-        self._is_offload_param = self.config.model.fsdp_config.param_offload
-        self._is_offload_grad = self.config.model.fsdp_config.grad_offload
-        self._is_offload_optimizer = self.config.model.fsdp_config.optimizer_offload
+        critic_fsdp_config = getattr(self.config.model, 'fsdp_config', {})
+        self._is_offload_param = critic_fsdp_config.get('param_offload', False)
+        self._is_offload_grad = critic_fsdp_config.get('grad_offload', False)
+        self._is_offload_optimizer = critic_fsdp_config.get('optimizer_offload', False)
 
         # normalize config
         self.config.ppo_mini_batch_size //= (torch.distributed.get_world_size() // self.ulysses_sequence_parallel_size)
@@ -594,7 +595,7 @@ class CriticWorker(Worker):
         if self.rank == 0:
             print(f'Critic overriding config {override_config_kwargs}')
 
-        torch_dtype = self.config.model.fsdp_config.get('model_dtype', 'fp32')
+        torch_dtype = getattr(self.config.model, 'fsdp_config', {}).get('model_dtype', 'fp32')
         torch_dtype = PrecisionType.to_dtype(torch_dtype)
 
         from transformers import AutoConfig, AutoModelForTokenClassification
@@ -634,7 +635,7 @@ class CriticWorker(Worker):
 
         self.critic_model_config = critic_model_config
 
-        fsdp_config = self.config.model.fsdp_config
+        fsdp_config = getattr(self.config.model, 'fsdp_config', {})
         mixed_precision_config = fsdp_config.get('mixed_precision', None)
         if mixed_precision_config is not None:
             param_dtype = PrecisionType.to_dtype(mixed_precision_config.get('param_dtype', 'bf16'))
@@ -647,7 +648,7 @@ class CriticWorker(Worker):
 
         mixed_precision = MixedPrecision(param_dtype=param_dtype, reduce_dtype=reduce_dtype, buffer_dtype=buffer_dtype)
 
-        auto_wrap_policy = get_fsdp_wrap_policy(module=critic_module, config=self.config.model.fsdp_config.wrap_policy)
+        auto_wrap_policy = get_fsdp_wrap_policy(module=critic_module, config=getattr(self.config.model, 'fsdp_config', {}).get('wrap_policy', None))
 
         log_gpu_memory_usage('Before critic FSDP', logger=None)
 
@@ -864,7 +865,8 @@ class RewardModelWorker(Worker):
                                                                             attn_implementation='flash_attention_2',
                                                                             trust_remote_code=trust_remote_code)
             reward_module.to(torch.bfloat16)
-        auto_wrap_policy = get_fsdp_wrap_policy(module=reward_module, config=self.config.model.fsdp_config)
+        reward_fsdp_config = getattr(self.config.model, 'fsdp_config', {})
+        auto_wrap_policy = get_fsdp_wrap_policy(module=reward_module, config=reward_fsdp_config)
 
         reward_module = FSDP(
             reward_module,
@@ -874,7 +876,7 @@ class RewardModelWorker(Worker):
             device_id=torch.cuda.current_device(),
             sharding_strategy=ShardingStrategy.FULL_SHARD,  # zero3
             sync_module_states=True,
-            cpu_offload=CPUOffload(offload_params=self.config.model.fsdp_config.param_offload),
+            cpu_offload=CPUOffload(offload_params=reward_fsdp_config.get('param_offload', False)),
             forward_prefetch=False)
 
         return reward_module

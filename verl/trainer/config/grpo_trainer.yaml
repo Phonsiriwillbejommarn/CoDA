@@ -37,38 +37,52 @@ actor_rollout_ref:
     use_remove_padding: True
   actor:
     strategy: fsdp
-    ppo_mini_batch_size: 32   # ลดขนาดลงเพื่อให้เหมาะสมกับ 1 GPU
-    ppo_micro_batch_size: 8   # ลดขนาดลงเพื่อให้เหมาะสมกับ 1 GPU
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size: 8
     grad_clip: 1.0
-    state_masking: True       # เปิดใช้งานเพื่อแยกบริบท Planner และ Executor ของ CoDA
+    state_masking: True
     clip_ratio: 0.2
     entropy_coeff: 0.001
-    use_kl_loss: True         # ต้องเป็น True สำหรับอัลกอริทึม GRPO
+    use_kl_loss: True
     kl_loss_coef: 0.001
     kl_loss_type: low_var_kl
     ppo_epochs: 1
     shuffle: False
-    refine_score: 0.1         # ให้คะแนนการกลั่นกรองข้อมูลตามแนวทาง CoDA
-    format_score: 0.1         # ให้คะแนนรูปแบบ XML เพื่อความเป็นระเบียบ
+    refine_score: 0.1
+    format_score: 0.1
+    fsdp_config:
+      param_offload: False
+      grad_offload: False
+      optimizer_offload: False
     optim:
       lr: 1e-6
       lr_warmup_steps_ratio: 0.1
       warmup_style: constant
-      total_training_steps: 480 # จุดที่ประสิทธิภาพสูงสุดตามกราฟของ RED
+      total_training_steps: 480
   rollout:
     name: vllm
-    temperature: 0.9          # ปรับลดเล็กน้อยเพื่อความแม่นยำของ Gemma 2
+    temperature: 0.9
     top_k: -1
     top_p: 0.95
     response_length: ${data.max_response_length}
     dtype: bfloat16
-    gpu_memory_utilization: 0.75 # จองพื้นที่ให้ vLLM มากขึ้นสำหรับ H100 80GB
+    gpu_memory_utilization: 0.75
     enforce_eager: True
     free_cache_engine: True
-    tensor_model_parallel_size: 1 # ต้องเป็น 1 สำหรับการใช้งาน 1 GPU
+    tensor_model_parallel_size: 1
     max_num_batched_tokens: 8192
     n: 1
-    n_agent: 8                # จำนวนเอเจนท์ขนานสำหรับงานวางแผนของ CoDA
+    n_agent: 8
+    load_format: dummy_hf
+    log_prob_micro_batch_size: 8
+    log_prob_max_token_len_per_gpu: 16384
+    log_prob_use_dynamic_bsz: True
+  ref:
+    fsdp_config:
+      param_offload: False
+    log_prob_micro_batch_size: 8
+    log_prob_max_token_len_per_gpu: 16384
+    log_prob_use_dynamic_bsz: True
 
 critic:
   strategy: fsdp
@@ -78,8 +92,19 @@ critic:
   model:
     path: ${actor_rollout_ref.model.path}
     enable_gradient_checkpointing: True
+    fsdp_config:
+      param_offload: False
+      grad_offload: False
+      optimizer_offload: False
+      model_dtype: fp32
+      wrap_policy: null
+    tokenizer_path: ${actor_rollout_ref.model.path}
   ppo_mini_batch_size: 32
   ppo_micro_batch_size: 8
+  ppo_epochs: 1
+  forward_micro_batch_size: 8
+  forward_max_token_len_per_gpu: 16384
+  use_dynamic_bsz: True
 
 algorithm:
   gamma: 1.0
