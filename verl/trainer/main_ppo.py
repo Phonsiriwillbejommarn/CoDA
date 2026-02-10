@@ -238,9 +238,11 @@ class RewardManager():
             executor_format_score = sum(score_info["executor_format_score"]) / len(score_info["executor_format_score"]) if len(score_info["executor_format_score"]) > 0 else 0
             answer_score = score_info["answer_score"]
             refine_score = score_info["refine_score"]
+            score_record[uid]["group_accuracy"] = answer_score # หรือค่าเฉลี่ยของกลุ่ม
+    
+            # คำนวณ Final Reward ของ CoDA เดิม
             score_record[uid]["reward"] = (6 * answer_score - 3) + planner_format_score + executor_format_score + 0.5 * refine_score
-
-        # print(f"reward record result: {score_record}")
+            # print(f"reward record result: {score_record}")
 
         for i in range(len(data)):
             data_item = data[i]  # DataProtoItem

@@ -168,6 +168,28 @@ def compute_rewards(token_level_scores, old_log_prob, ref_log_prob, kl_ratio):
     kl = old_log_prob - ref_log_prob
     return token_level_scores - kl * kl_ratio
 
+def compute_red_weight(h_rl_prev, h_rl_curr, h_sft_prev, h_sft_curr, G):
+    """
+    คำนวณค่า w ตาม Logic (I) ของ RED: Dynamic Entropy Regulation [cite: 606]
+    """
+    # คำนวณการเปลี่ยนแปลงของ Entropy
+    delta_h_rl = torch.abs(1 - h_rl_curr / (h_rl_prev + 1e-8))
+    delta_h_sft = torch.abs(1 - h_sft_curr / (h_sft_prev + 1e-8))
+    
+    # w = clip(delta_h_sft / delta_h_rl, 1, G)
+    w = torch.clamp(delta_h_sft / (delta_h_rl + 1e-8), 1.0, float(G))
+    return w
+
+def compute_pi_offline_ratio(pi_current, r_mean_group):
+    """
+    คำนวณค่า r_offline ตาม Logic (II) ของ RED: Accuracy-aware Policy Shifts [cite: 582, 572]
+    """
+    # pi_offline = pi + (1 - pi) * r_mean_group
+    pi_offline = pi_current + (1 - pi_current) * r_mean_group
+    
+    # ratio = pi / pi_offline
+    return pi_current / (pi_offline + 1e-8)
+
 
 def compute_policy_loss(old_log_prob, log_prob, advantages, eos_mask, cliprange, clip_ratio_c=3.0):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1122
