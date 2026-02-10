@@ -13,6 +13,22 @@ data:
   shuffle_train_dataloader: True
   model_type: base
 
+reward_model:
+  enable: false
+  strategy: fsdp
+  reward_style: model
+  train_num_examine: 1
+  val_num_examine: 1
+  model:
+    path: google/gemma-2-2b
+    enable_gradient_checkpointing: True
+    use_remove_padding: True
+  optim:
+    lr: 1e-5
+    total_training_steps: 480
+  ppo_mini_batch_size: 32
+  ppo_micro_batch_size: 8
+
 actor_rollout_ref:
   hybrid_engine: True
   model:
