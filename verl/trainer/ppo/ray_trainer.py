@@ -487,17 +487,15 @@ class RayPPOTrainer(object):
         self.sft_dataloader = None
         self.sft_iter = None
         if self.sft_enabled:
-            from verl.utils.dataset.rl_dataset import RLHFDataset as SFTRLDataset
+            from verl.utils.dataset import SFTDataset
             sft_config = self.config.sft
-            sft_dataset = SFTRLDataset(
+            sft_dataset = SFTDataset(
                 parquet_files=sft_config.train_files,
                 tokenizer=self.tokenizer,
                 prompt_key=sft_config.get('prompt_key', 'prompt'),
-                max_prompt_length=sft_config.get('max_length', 4096),
-                filter_prompts=False,
-                return_raw_chat=False,
-                truncation='error',
-                model_type=self.config.data.model_type
+                response_key=sft_config.get('response_key', 'response'),
+                max_length=sft_config.get('max_length', 4096),
+                truncation=True
             )
             self.sft_dataloader = DataLoader(
                 dataset=sft_dataset,

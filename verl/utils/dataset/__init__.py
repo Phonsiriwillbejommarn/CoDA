@@ -1,3 +1,4 @@
+
 # Copyright 2024 Bytedance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,3 +15,4 @@
 
 from .rl_dataset import RLHFDataset
 from .rm_dataset import RMDataset
+from .sft_dataset import SFTDataset
