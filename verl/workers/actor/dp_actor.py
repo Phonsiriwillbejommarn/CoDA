@@ -27,6 +27,7 @@ from verl.trainer.ppo import core_algos
 from verl.workers.actor import BasePPOActor
 from verl.utils.py_functional import append_to_dict
 from verl.utils.torch_functional import logprobs_from_logits, masked_mean
+from torch.nn import CrossEntropyLoss
 from verl.utils.ulysses import ulysses_pad_and_slice_inputs, gather_outpus_and_unpad
 from verl.utils.seqlen_balancing import rearrange_micro_batches, get_reverse_idx
 import verl.utils.torch_functional as verl_F
@@ -200,6 +201,51 @@ class DataParallelPPOActor(BasePPOActor):
 
         return log_probs
 
+    def compute_sft_loss(self, sft_batch):
+        """
+        Compute cross-entropy SFT loss on expert demonstration data.
+        This implements the "Extend" phase of RED.
+        
+        Args:
+            sft_batch: dict with 'input_ids', 'attention_mask', 'position_ids', 'loss_mask'
+        Returns:
+            sft_loss: scalar tensor
+            sft_entropy: scalar tensor (mean entropy of SFT predictions)
+        """
+        with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+            output = self.actor_module(
+                input_ids=sft_batch['input_ids'],
+                attention_mask=sft_batch['attention_mask'],
+                position_ids=sft_batch['position_ids'],
+                use_cache=False
+            )
+
+        logits = output.logits
+        # Shift logits and labels for next-token prediction
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = sft_batch['input_ids'][..., 1:].contiguous()
+        loss_mask = sft_batch['loss_mask'][..., :-1].contiguous()
+
+        # Flatten
+        loss_fct = CrossEntropyLoss(reduction='none')
+        flat_logits = shift_logits.view(-1, shift_logits.size(-1))
+        flat_labels = shift_labels.view(-1)
+        flat_loss = loss_fct(flat_logits, flat_labels)
+
+        # Apply mask and compute mean
+        flat_mask = loss_mask.view(-1).float()
+        valid_tokens = flat_mask.sum()
+        if valid_tokens > 0:
+            sft_loss = (flat_loss * flat_mask).sum() / valid_tokens
+        else:
+            sft_loss = flat_loss.mean()
+
+        # Compute entropy for RED weight calculation
+        sft_entropy = verl_F.entropy_from_logits(shift_logits)
+        sft_entropy = verl_F.masked_mean(sft_entropy.view(-1), flat_mask) if valid_tokens > 0 else sft_entropy.mean()
+
+        return sft_loss, sft_entropy
+
     def update_policy(self, data: DataProto):
         # make sure we are in training mode
         self.actor_module.train()
@@ -207,6 +253,11 @@ class DataParallelPPOActor(BasePPOActor):
         assert self.config.ppo_mini_batch_size % self.config.ppo_micro_batch_size == 0
         self.gradient_accumulation = self.config.ppo_mini_batch_size // self.config.ppo_micro_batch_size
         temperature = data.meta_info['temperature']  # temperature must be in the data.meta_info to avoid slient error
+
+        # --- Extract SFT config from meta_info ---
+        sft_batch = data.meta_info.get('sft_batch', None)
+        sft_loss_coef = data.meta_info.get('sft_loss_coef', 0.1)
+        red_weight = data.meta_info.get('red_weight', 1.0)  # Dynamic weight from RED
 
         select_keys = ['responses', 'input_ids', 'attention_mask', 'position_ids', 'old_log_probs', 'advantages']
         if self.config.state_masking:
@@ -231,6 +282,10 @@ class DataParallelPPOActor(BasePPOActor):
                 micro_batches = mini_batch.split(self.config.ppo_micro_batch_size)
 
             self.actor_optimizer.zero_grad()
+
+            # --- Accumulate RL entropy for RED ---
+            rl_entropy_accum = 0.0
+            rl_entropy_count = 0
 
             for data in micro_batches:
                 data = data.cuda()  # actor device is cpu when using offload
@@ -257,6 +312,10 @@ class DataParallelPPOActor(BasePPOActor):
                 # compute entropy loss from entropy
                 entropy_loss = verl_F.masked_mean(entropy, response_mask)
 
+                # Track RL entropy for RED
+                rl_entropy_accum += entropy_loss.detach().item()
+                rl_entropy_count += 1
+
                 # compute policy loss
                 policy_loss = pg_loss - entropy_loss * entropy_coeff
 
@@ -282,6 +341,24 @@ class DataParallelPPOActor(BasePPOActor):
                     'actor/ppo_kl': ppo_kl.detach().item(),
                 }
                 append_to_dict(metrics, data)
+
+            # --- SFT Loss (Extend Phase of RED) ---
+            if sft_batch is not None:
+                sft_data = {k: v.cuda() for k, v in sft_batch.items()}
+                sft_loss, sft_entropy = self.compute_sft_loss(sft_data)
+
+                # Apply RED weight: w * sft_loss_coef * sft_loss
+                weighted_sft_loss = red_weight * sft_loss_coef * sft_loss / self.gradient_accumulation
+                weighted_sft_loss.backward()
+
+                # Log SFT and RED metrics
+                sft_metrics = {
+                    'actor/sft_loss': sft_loss.detach().item(),
+                    'actor/sft_entropy': sft_entropy.detach().item(),
+                    'actor/red_weight': red_weight,
+                    'actor/rl_entropy': rl_entropy_accum / max(rl_entropy_count, 1),
+                }
+                append_to_dict(metrics, sft_metrics)
 
             grad_norm = self._optimizer_step()
             data = {'actor/grad_norm': grad_norm.detach().item()}

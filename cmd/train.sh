@@ -98,4 +98,12 @@ python3 -m verl.trainer.main_ppo \
     trainer.default_local_dir=verl_checkpoints/$EXPERIMENT_NAME \
     retriever.url="http://127.0.0.1:8000/retrieve" \
     retriever.topk=3 \
+    sft.enabled=true \
+    sft.train_files=$DATA_DIR/sft_train.parquet \
+    sft.loss_coef=0.1 \
+    sft.micro_batch_size=4 \
+    sft.max_length=4096 \
+    red.G=5.0 \
+    red.sft_entropy_ema_decay=0.99 \
+    red.rl_entropy_ema_decay=0.99 \
     2>&1 | tee log/$EXPERIMENT_NAME.log

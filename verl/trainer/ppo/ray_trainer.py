@@ -482,6 +482,32 @@ class RayPPOTrainer(object):
         assert len(self.train_dataloader) >= 1
         assert len(self.val_dataloader) >= 1
 
+        # --- SFT DataLoader for RED Extend Phase ---
+        self.sft_enabled = self.config.get('sft', {}).get('enabled', False)
+        self.sft_dataloader = None
+        self.sft_iter = None
+        if self.sft_enabled:
+            from verl.utils.dataset.rl_dataset import RLHFDataset as SFTRLDataset
+            sft_config = self.config.sft
+            sft_dataset = SFTRLDataset(
+                parquet_files=sft_config.train_files,
+                tokenizer=self.tokenizer,
+                prompt_key=sft_config.get('prompt_key', 'prompt'),
+                max_prompt_length=sft_config.get('max_length', 4096),
+                filter_prompts=False,
+                return_raw_chat=False,
+                truncation='error',
+                model_type=self.config.data.model_type
+            )
+            self.sft_dataloader = DataLoader(
+                dataset=sft_dataset,
+                batch_size=sft_config.get('micro_batch_size', 4),
+                shuffle=True,
+                drop_last=True,
+                collate_fn=collate_fn
+            )
+            logging.info(f'SFT DataLoader created with {len(sft_dataset)} samples')
+
         # inject total_training_steps to actor/critic optim_config. This is hacky.
         total_training_steps = len(self.train_dataloader) * self.config.trainer.total_epochs
 
@@ -823,6 +849,16 @@ class RayPPOTrainer(object):
             model_type=self.config.data.model_type
         )
 
+        # --- RED Entropy Tracking (EMA) ---
+        self.h_rl_prev = torch.tensor(1.0)   # RL entropy EMA (previous step)
+        self.h_sft_prev = torch.tensor(1.0)  # SFT entropy EMA (previous step)
+        red_G = self.config.get('red', {}).get('G', 5.0)
+        red_sft_decay = self.config.get('red', {}).get('sft_entropy_ema_decay', 0.99)
+        red_rl_decay = self.config.get('red', {}).get('rl_entropy_ema_decay', 0.99)
+        if self.sft_enabled:
+            self.sft_iter = iter(self.sft_dataloader)
+            logging.info(f'RED enabled: G={red_G}, sft_decay={red_sft_decay}, rl_decay={red_rl_decay}')
+
         # start training loop
         self.best_reward = float('-inf')
         self.best_val = 0.0
@@ -951,9 +987,51 @@ class RayPPOTrainer(object):
                         with _timer('update_actor', timing_raw):
                             if self.config.do_search and self.config.actor_rollout_ref.actor.state_masking:
                                 batch, metrics = self._create_loss_mask(batch, metrics)
+
+                            # --- RED + SFT Integration ---
+                            if self.sft_enabled:
+                                # Get next SFT batch (cycle if exhausted)
+                                try:
+                                    sft_batch_dict = next(self.sft_iter)
+                                except StopIteration:
+                                    self.sft_iter = iter(self.sft_dataloader)
+                                    sft_batch_dict = next(self.sft_iter)
+
+                                # Prepare SFT batch tensors
+                                sft_tensors = {}
+                                for k, v in sft_batch_dict.items():
+                                    if isinstance(v, torch.Tensor):
+                                        sft_tensors[k] = v
+                                if 'loss_mask' not in sft_tensors and 'attention_mask' in sft_tensors:
+                                    sft_tensors['loss_mask'] = sft_tensors['attention_mask']
+                                if 'position_ids' not in sft_tensors and 'attention_mask' in sft_tensors:
+                                    sft_tensors['position_ids'] = torch.cumsum(sft_tensors['attention_mask'], dim=-1) - 1
+                                    sft_tensors['position_ids'] = sft_tensors['position_ids'].clamp(min=0)
+
+                                # Compute RED weight using entropy tracking
+                                red_weight = core_algos.compute_red_weight(
+                                    h_rl_prev=self.h_rl_prev,
+                                    h_rl_curr=self.h_rl_prev,  # Will be updated by actor metrics
+                                    h_sft_prev=self.h_sft_prev,
+                                    h_sft_curr=self.h_sft_prev,  # Will be updated by actor metrics
+                                    G=red_G
+                                )
+
+                                # Pass SFT batch and RED weight to actor
+                                batch.meta_info['sft_batch'] = sft_tensors
+                                batch.meta_info['sft_loss_coef'] = self.config.sft.get('loss_coef', 0.1)
+                                batch.meta_info['red_weight'] = float(red_weight.item()) if torch.is_tensor(red_weight) else float(red_weight)
+
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
                         metrics.update(actor_output_metrics)
+
+                        # --- Update RED entropy EMA after actor update ---
+                        if self.sft_enabled and 'actor/rl_entropy' in metrics and 'actor/sft_entropy' in metrics:
+                            h_rl_curr = torch.tensor(metrics['actor/rl_entropy'])
+                            h_sft_curr = torch.tensor(metrics['actor/sft_entropy'])
+                            self.h_rl_prev = red_rl_decay * self.h_rl_prev + (1 - red_rl_decay) * h_rl_curr
+                            self.h_sft_prev = red_sft_decay * self.h_sft_prev + (1 - red_sft_decay) * h_sft_curr
 
                     # validate
                     if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \

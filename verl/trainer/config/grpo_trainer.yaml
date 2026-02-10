@@ -98,3 +98,20 @@ do_search: true
 retriever:
   url: "http://127.0.0.1:8000/retrieve"
   topk: 3
+
+# --- SFT Configuration (Extend Phase) ---
+# ใช้สอนรูปแบบ XML Tags และ Workflow ของ CoDA ให้โมเดล Base
+sft:
+  enabled: false                      # ตั้งเป็น true เพื่อเปิดใช้งาน SFT ร่วมกับ RL
+  train_files: data/sft_train.parquet # ไฟล์ข้อมูล SFT (Distilled expert trajectories)
+  prompt_key: prompt
+  response_key: response
+  max_length: 4096                    # ความยาว sequence สูงสุดของ SFT data
+  micro_batch_size: 4                 # Micro batch size สำหรับ SFT forward pass
+  loss_coef: 0.1                      # ค่าน้ำหนัก SFT loss เริ่มต้น (ก่อน RED ปรับ)
+
+# --- RED Dynamics Tuning ---
+red:
+  G: 5.0                             # Upper bound ของ RED weight w = clip(δH_sft/δH_rl, 1, G)
+  sft_entropy_ema_decay: 0.99        # Exponential moving average decay สำหรับ SFT entropy
+  rl_entropy_ema_decay: 0.99         # Exponential moving average decay สำหรับ RL entropy
