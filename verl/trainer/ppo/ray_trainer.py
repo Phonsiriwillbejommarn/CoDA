@@ -507,10 +507,11 @@ class RayPPOTrainer(object):
             logging.info(f'SFT DataLoader created with {len(sft_dataset)} samples')
 
         # inject total_training_steps to actor/critic optim_config. This is hacky.
-        total_training_steps = len(self.train_dataloader) * self.config.trainer.total_epochs
-
         if self.config.trainer.total_training_steps is not None:
             total_training_steps = self.config.trainer.total_training_steps
+        else:
+            total_epochs = getattr(self.config.trainer, 'total_epochs', 1)
+            total_training_steps = len(self.train_dataloader) * total_epochs
 
         self.total_training_steps = total_training_steps
         logging.info(f'Total training steps: {self.total_training_steps}')
