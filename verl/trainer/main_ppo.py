@@ -19,7 +19,7 @@ from verl import DataProto
 import torch
 from verl.utils.reward_score import qa_em
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer
-from verl.trainer.ppo.ray_dapo_trainer import RayDAPOTrainer
+# from verl.trainer.ppo.ray_dapo_trainer import RayDAPOTrainer
 import json
 from collections import defaultdict
 
@@ -351,8 +351,9 @@ def main_task(config):
     val_reward_fn = RewardManager(tokenizer=tokenizer, num_examine=config.reward_model.val_num_examine, log_path=val_log_jsonl, reward_style=reward_style)
 
     resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
-    if config.algorithm.filter_groups.enable:
-        Trainer = RayDAPOTrainer
+    if config.algorithm.get('filter_groups', {}).get('enable', False):
+        raise NotImplementedError("RayDAPOTrainer is not available.")
+        # Trainer = RayDAPOTrainer
     else:
         Trainer = RayPPOTrainer
     trainer = Trainer(config=config,
