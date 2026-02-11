@@ -88,6 +88,12 @@ class vLLMRollout(BaseRollout):
 
         assert model_hf_config.max_position_embeddings >= config.prompt_length + config.response_length, \
             "model context length should be greater than total sequence length"
+        # Disable attn_logit_softcapping for vLLM compatibility (XFormers doesn't support it).
+        # Training via HF+SDPA still uses softcapping; this only affects vLLM inference.
+        if hasattr(model_hf_config, 'attn_logit_softcapping') and model_hf_config.attn_logit_softcapping is not None:
+            print(f"Disabling attn_logit_softcapping={model_hf_config.attn_logit_softcapping} for vLLM (XFormers compat)")
+            model_hf_config.attn_logit_softcapping = None
+
         self.inference_engine = LLM(actor_module,
                                     tokenizer=tokenizer,
                                     model_hf_config=model_hf_config,
