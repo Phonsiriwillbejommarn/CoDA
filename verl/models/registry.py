@@ -20,8 +20,15 @@ import torch.nn as nn
 # Supported models using HF Rmpad
 # TODO(sgm): HF may supported more than listed here, we should add more after testing
 from transformers import LlamaConfig, MistralConfig, GemmaConfig, Qwen2Config
+try:
+    from transformers import Gemma2Config
+    _HAS_GEMMA2 = True
+except ImportError:
+    _HAS_GEMMA2 = False
 
 _REOVEPAD_MODELS = {'llama': LlamaConfig, 'mistral': MistralConfig, 'gemma': GemmaConfig, 'qwen2': Qwen2Config}
+if _HAS_GEMMA2:
+    _REOVEPAD_MODELS['gemma2'] = Gemma2Config
 
 
 def check_model_support_rmpad(model_type: str):
