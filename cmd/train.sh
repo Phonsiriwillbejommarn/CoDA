@@ -69,7 +69,7 @@ python3 -m verl.trainer.main_ppo \
     data.max_prompt_length=3072 \
     data.max_response_length=1024 \
     data.max_start_length=2048 \
-    data.max_obs_length=512 \
+    data.max_obs_length=3072 \
     max_turns=6 \
     data.shuffle_train_dataloader=true \
     algorithm.adv_estimator=grpo \
