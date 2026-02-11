@@ -64,6 +64,7 @@ actor_rollout_ref:
     temperature: 0.9
     top_k: -1
     top_p: 0.95
+    prompt_length: ${data.max_prompt_length}
     response_length: ${data.max_response_length}
     dtype: bfloat16
     gpu_memory_utilization: 0.75
