@@ -16,6 +16,7 @@ FSDP PPO Trainer with Ray-based single controller.
 This trainer supports model-agonistic model initialization with huggingface
 """
 import time
+from tqdm import tqdm
 import os
 import uuid
 import logging
@@ -895,9 +896,11 @@ class RayPPOTrainer(object):
         # start training loop
         self.best_reward = float('-inf')
         self.best_val = 0.0
+        pbar = tqdm(total=self.total_training_steps, initial=self.global_steps, 
+                    desc='Training', unit='step', dynamic_ncols=True)
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
-                logging.debug(f'epoch {epoch}, step {self.global_steps}')
+                pbar.set_description(f'Training [Epoch {epoch+1}, Step {self.global_steps}/{self.total_training_steps}]')
                 metrics = {}
                 timing_raw = {}
 
@@ -1103,9 +1106,15 @@ class RayPPOTrainer(object):
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
 
+                # Update progress bar with reward info
+                reward_mean = metrics.get('critic/rewards/mean', 0)
+                pbar.set_postfix({'reward': f'{reward_mean:.4f}'})
+                pbar.update(1)
+
                 self.global_steps += 1
 
                 if self.global_steps >= self.total_training_steps:
+                    pbar.close()
                     # perform validation after training
                     # if self.val_reward_fn is not None:
                     #     val_metrics = self._validate()
