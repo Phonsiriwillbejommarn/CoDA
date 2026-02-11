@@ -41,6 +41,7 @@ from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seql
 from verl.utils.reward_score.qa_em import validate_format
 
 import shutil
+from huggingface_hub import HfApi, create_repo
 from search_r1.llm_agent.generation import LLMGenerationManager, GenerationConfig
 
 WorkerType = Type[Worker]
@@ -722,12 +723,39 @@ class RayPPOTrainer(object):
         self.actor_rollout_wg = all_wg['actor_rollout']
         self.actor_rollout_wg.init_model()
 
+    def _push_to_hf_hub(self, local_path: str, subfolder: str = ""):
+        """Push checkpoint to Hugging Face Hub."""
+        try:
+            hf_username = "Phonsiri"
+            repo_name = f"{hf_username}/{self.config.trainer.experiment_name}"
+            api = HfApi()
+            
+            # Create repo if not exists
+            try:
+                create_repo(repo_name, repo_type="model", exist_ok=True, private=False)
+            except Exception as e:
+                logging.warning(f"Could not create HF repo (may already exist): {e}")
+            
+            # Upload the checkpoint folder
+            api.upload_folder(
+                folder_path=local_path,
+                repo_id=repo_name,
+                path_in_repo=subfolder if subfolder else None,
+                commit_message=f"Checkpoint step {self.global_steps}",
+            )
+            logging.info(f"Pushed checkpoint to HF Hub: {repo_name}/{subfolder}")
+        except Exception as e:
+            logging.warning(f"Failed to push checkpoint to HF Hub: {e}")
+
     def _save_checkpoint(self):
         actor_local_path = os.path.join(self.config.trainer.default_local_dir, 'actor',
                                         f'global_step_{self.global_steps}')
         actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
             self.config.trainer.default_hdfs_dir, 'actor')
         self.actor_rollout_wg.save_checkpoint(actor_local_path, actor_remote_path)
+        
+        # Push to HF Hub
+        self._push_to_hf_hub(actor_local_path, subfolder=f'actor/global_step_{self.global_steps}')
 
         if self.use_critic:
             critic_local_path = os.path.join(self.config.trainer.default_local_dir, 'critic',
@@ -752,6 +780,9 @@ class RayPPOTrainer(object):
         actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
             self.config.trainer.default_hdfs_dir, 'actor')
         self.actor_rollout_wg.save_checkpoint(actor_local_path, actor_remote_path)
+        
+        # Push best model to HF Hub
+        self._push_to_hf_hub(actor_local_path, subfolder=f'actor/best_step_{self.global_steps}')
 
         assert not self.use_critic
 
@@ -771,6 +802,9 @@ class RayPPOTrainer(object):
         actor_remote_path = None if self.config.trainer.default_hdfs_dir is None else os.path.join(
             self.config.trainer.default_hdfs_dir, 'actor')
         self.actor_rollout_wg.save_checkpoint(actor_local_path, actor_remote_path)
+        
+        # Push best val model to HF Hub
+        self._push_to_hf_hub(actor_local_path, subfolder=f'actor/best_val_step_{self.global_steps}')
 
         assert not self.use_critic
 
