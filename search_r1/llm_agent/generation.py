@@ -758,6 +758,9 @@ If I want to give the final answer, I should put the answer between <answer> and
             return [self._passages2string(result) for result in results]
         except (KeyError, ValueError) as e:
             raise ValueError(f"Failed to process search results: {str(e)}")
+        except (requests.ConnectionError, requests.Timeout, requests.RequestException) as e:
+            logging.warning(f"Retriever service unavailable: {e}. Returning empty results.")
+            return ["No search results available." for _ in queries]
 
     def _batch_search(self, queries: List[str]) -> Dict[str, Any]:
         """
