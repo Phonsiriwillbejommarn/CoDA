@@ -51,7 +51,7 @@ class DataParallelPPOActor(BasePPOActor):
         self.actor_optimizer = actor_optimizer
         self.use_remove_padding = self.config.get('use_remove_padding', False)
         print(f'Actor use_remove_padding={self.use_remove_padding}')
-        self.ulysses_sequence_parallel_size = self.config.ulysses_sequence_parallel_size
+        self.ulysses_sequence_parallel_size = getattr(self.config, 'ulysses_sequence_parallel_size', 1)
         self.use_ulysses_sp = self.ulysses_sequence_parallel_size > 1
 
         self.compute_entropy_from_logits = torch.compile(verl_F.entropy_from_logits, dynamic=True)

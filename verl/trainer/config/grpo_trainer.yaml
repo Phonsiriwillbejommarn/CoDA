@@ -83,6 +83,7 @@ actor_rollout_ref:
     log_prob_micro_batch_size: 8
     log_prob_max_token_len_per_gpu: 16384
     log_prob_use_dynamic_bsz: True
+    ulysses_sequence_parallel_size: 1
 
 critic:
   strategy: fsdp
