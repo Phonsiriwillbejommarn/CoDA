@@ -92,7 +92,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['tensorboard'] \
     trainer.n_gpus_per_node=$num_gpus \
     trainer.nnodes=1 \
-    trainer.save_freq=50 \
+    trainer.save_freq=10 \
     trainer.project_name=$WANDB_PROJECT \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.default_local_dir=verl_checkpoints/$EXPERIMENT_NAME \
