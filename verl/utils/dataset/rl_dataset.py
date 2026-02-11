@@ -125,10 +125,13 @@ class RLHFDataset(Dataset):
         """
         row_dict = self.dataframe.iloc[item].to_dict()
 
+        # Handle both plain string prompts and chat-format (list of dicts) prompts
         chat = row_dict.pop(self.prompt_key)
-
-        assert chat[0]["role"] == "user", "role must be user"
-        question = chat[0]["content"]  # Get the full content, not split by "Question: "
+        if isinstance(chat, str):
+            question = chat
+        else:
+            assert chat[0]["role"] == "user", "role must be user"
+            question = chat[0]["content"]
 
         if self.model_type == "base":
             # Task decomposition system prompt
