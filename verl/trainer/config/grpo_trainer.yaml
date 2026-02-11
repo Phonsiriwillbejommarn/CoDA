@@ -4,7 +4,7 @@ data:
   train_files: ~/data/rlhf/gsm8k/train.parquet
   val_files: ~/data/rlhf/gsm8k/test.parquet
   prompt_key: prompt
-  max_prompt_length: 4096   # เพิ่มความยาวเพื่อให้รองรับการทำงานแบบ Hierarchical ของ CoDA
+  max_prompt_length: 3072
   max_response_length: 1024  # Gemma 2 ทำงานได้ดีกับคำตอบที่มีรายละเอียด
   max_start_length: 2048
   max_obs_length: 512

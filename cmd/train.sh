@@ -66,7 +66,7 @@ python3 -m verl.trainer.main_ppo \
     data.val_files=$DATA_DIR/valid_500.parquet \
     data.train_batch_size=128 \
     data.val_batch_size=128 \
-    data.max_prompt_length=4096 \
+    data.max_prompt_length=3072 \
     data.max_response_length=1024 \
     data.max_start_length=2048 \
     data.max_obs_length=512 \
