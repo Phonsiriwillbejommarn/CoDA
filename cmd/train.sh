@@ -56,9 +56,32 @@ except Exception as e:
 # สร้างโฟลเดอร์สำหรับเก็บ Log
 mkdir -p log/
 
-# 6. คำสั่งรันการฝึก (Consolidated Command) — CoDA + RED Logic
+# 7. Auto-resume from HF Hub checkpoint (if available)
+HF_REPO="Phonsiri/$EXPERIMENT_NAME"
+RESUME_STEP=0
+MODEL_PATH=$BASE_MODEL
+
+echo "Checking for existing checkpoints on HF Hub..."
+RESUME_OUTPUT=$(python3 cmd/auto_resume.py --repo $HF_REPO 2>&1)
+RESUME_EXIT=$?
+
+if [ $RESUME_EXIT -eq 0 ]; then
+    RESUME_PATH=$(echo "$RESUME_OUTPUT" | grep "RESUME_PATH=" | cut -d'=' -f2)
+    RESUME_STEP=$(echo "$RESUME_OUTPUT" | grep "RESUME_STEP=" | cut -d'=' -f2)
+    if [ -n "$RESUME_PATH" ] && [ -d "$RESUME_PATH" ]; then
+        MODEL_PATH=$RESUME_PATH
+        echo "✅ Resuming from checkpoint: step $RESUME_STEP"
+        echo "   Model path: $MODEL_PATH"
+    else
+        echo "⚠️ No valid checkpoint found, starting from base model."
+    fi
+else
+    echo "⚠️ No checkpoint found on HF Hub, training from scratch."
+fi
+
+# 8. คำสั่งรันการฝึก (Consolidated Command) — CoDA + RED Logic
 python3 -m verl.trainer.main_ppo \
-    actor_rollout_ref.model.path=$BASE_MODEL \
+    actor_rollout_ref.model.path=$MODEL_PATH \
     actor_rollout_ref.model.enable_gradient_checkpointing=true \
     actor_rollout_ref.model.use_remove_padding=True \
     reward_model.reward_style="F1" \
@@ -93,6 +116,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=$num_gpus \
     trainer.nnodes=1 \
     trainer.save_freq=10 \
+    trainer.resume_step=$RESUME_STEP \
     trainer.project_name=$WANDB_PROJECT \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.default_local_dir=verl_checkpoints/$EXPERIMENT_NAME \

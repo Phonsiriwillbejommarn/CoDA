@@ -835,6 +835,13 @@ class RayPPOTrainer(object):
 
         logger = self.logger
         self.global_steps = 0
+        
+        # Handle resume from checkpoint
+        resume_step = getattr(self.config.trainer, 'resume_step', 0)
+        if resume_step > 0:
+            self.global_steps = resume_step
+            logging.info(f"▶ Resuming training from step {resume_step}")
+        
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
@@ -898,8 +905,15 @@ class RayPPOTrainer(object):
         self.best_val = 0.0
         pbar = tqdm(total=self.total_training_steps, initial=self.global_steps, 
                     desc='Training', unit='step', dynamic_ncols=True)
+        step_counter = 0  # counts total batches seen (for resume skipping)
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
+                # Skip batches that were already processed before resume
+                if resume_step > 0 and step_counter < resume_step:
+                    step_counter += 1
+                    pbar.set_description(f'Skipping [Step {step_counter}/{resume_step}]')
+                    continue
+                    
                 pbar.set_description(f'Training [Epoch {epoch+1}, Step {self.global_steps}/{self.total_training_steps}]')
                 metrics = {}
                 timing_raw = {}
