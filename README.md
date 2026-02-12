@@ -1,9 +1,27 @@
-# 🧠 CoDA: Context-Decoupled Hierarchical Agent
+# 🧠 RED-CoDA: Recall-Extend Dynamics for Small Retrieval-Augmented Agents
 
-**CoDA-Gemma2-RED** — A single Gemma-2-2B model trained as a hierarchical RAG agent using GRPO reinforcement learning.
+**Enhancing CoDA (Context-Decoupled Hierarchical Agent) with RED (Recall-Extend Dynamics) to train small language models as effective retrieval-augmented reasoning agents.**
 
-[![Model on HF](https://img.shields.io/badge/🤗-Model-yellow)](https://huggingface.co/Phonsiri/CoDA-Gemma2-RED-v1)
+Built on [CoDA](https://arxiv.org/abs/2505.xxxxx) + [RED](https://arxiv.org/abs/2505.xxxxx) frameworks, using Gemma-2-2B with GRPO reinforcement learning.
+
+[![Model on HF](https://img.shields.io/badge/🤗-Model-yellow)](https://huggingface.co/Phonsiri/CoDA-Gemma2-RED-v3)
 [![W&B Dashboard](https://img.shields.io/badge/W%26B-Dashboard-blue)](https://wandb.ai)
+
+---
+
+## 📌 Overview
+
+Small Language Models (SLMs) struggle with complex multi-hop QA tasks that require retrieval. Standard approaches either:
+- **SFT only** → overfits to teacher patterns, poor generalization
+- **RL only** → insufficient exploration space for small models
+- **SFT → RL** → catastrophic forgetting of learned patterns
+
+**RED-CoDA** solves this by **jointly training SFT + RL** with dynamic weighting controlled by two mechanisms:
+
+| RED Component | What it does |
+|---|---|
+| **Part 1: Dynamic Entropy Regulation** | Monitors entropy changes to balance exploration (RL) vs exploitation (SFT) |
+| **Part 2: Accuracy-Aware Policy Shift** | When model answers poorly → more SFT; when it answers well → more RL |
 
 ---
 
@@ -20,7 +38,7 @@
 └──────┬───────────────────────┬───────────────┘
        │                       │
        ▼                       ▼
-  search(query)          finish(answer)
+  search(query)          answer(result)
        │
        ▼
   ┌─────────────┐
@@ -29,20 +47,36 @@
   └─────────────┘
 ```
 
-### Key Concepts
+### RED Training Loop
 
-| Concept | Description |
-|---------|-------------|
-| **Context-Decoupled** | Separates Planner (strategic) from Executor (ephemeral) contexts to prevent context explosion |
-| **PECO Training** | Planner-Executor Co-Optimization — trains both roles simultaneously with RL |
-| **GRPO** | Group Relative Policy Optimization for reward-based learning |
-| **RED** | Recall-Extend Dynamics for balancing SFT/RL training |
+```
+┌─────────────────────────────────────────────────────┐
+│  1 Training Step                                     │
+│                                                      │
+│  🎲 RL Rollout (vLLM) → Generate responses           │
+│  📊 Compute Reward (F1 + format + refine)            │
+│  📈 GRPO Advantage (group normalization)             │
+│                                                      │
+│  ┌─── RED Weight Computation ───────────────────┐   │
+│  │  Part 1: entropy_weight = f(δH_sft / δH_rl)  │   │
+│  │  Part 2: accuracy_factor = G^(1 - 2·acc)     │   │
+│  │  final_weight = entropy × accuracy            │   │
+│  └───────────────────────────────────────────────┘   │
+│                                                      │
+│  🧠 Actor Update:                                    │
+│     RL loss (policy gradient)                        │
+│     + final_weight × SFT loss (cross-entropy)        │
+│     → single optimizer step                          │
+└─────────────────────────────────────────────────────┘
+```
 
-### Composite Reward (3 components)
+### Composite Reward
 
-1. **Correctness** — F1 score vs ground truth answer (primary)
-2. **Format Compliance** — Correct XML tag usage (+0.1)
-3. **Refinement Quality** — Effective search summarization (+0.1)
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| **Answer Quality** | `6 × F1 - 3` | F1 score vs ground truth (dominant) |
+| **Format Compliance** | `0.1 × score` | Graduated XML tag scoring (0.25/tag) |
+| **Refinement Quality** | `0.1 × score` | Search summarization quality |
 
 ---
 
@@ -64,7 +98,7 @@ pip install -e .
 ### 2. Login Services
 
 ```bash
-wandb login          # For training dashboard
+wandb login            # For training dashboard
 huggingface-cli login  # For checkpoint push
 ```
 
@@ -74,7 +108,7 @@ huggingface-cli login  # For checkpoint push
 # Download retriever index + Wikipedia corpus (~130GB)
 bash preprocess/download_and_process.sh
 
-# Process training data (NQ, HotpotQA, TriviaQA, PopQA, Musique, etc.)
+# Process training data (NQ, HotpotQA, etc.)
 bash preprocess/scripts/data_process.sh
 
 # Generate SFT training data
@@ -93,29 +127,43 @@ bash cmd/train.sh
 
 ---
 
-## ⚙️ Training Configuration
+## ⚙️ Configuration
 
-All configs are in [`cmd/train.sh`](cmd/train.sh):
+All configs in [`cmd/train.sh`](cmd/train.sh):
+
+### Core Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `train_batch_size` | 32 | Prompts per training step |
 | `n_agent` | 2 | Responses per prompt (GRPO group size) |
 | `max_turns` | 2 | Search rounds per sample |
-| `save_freq` | 5 | Checkpoint push frequency (steps) |
 | `total_training_steps` | 480 | Total training steps |
-| `max_prompt_length` | 3072 | Max prompt token length |
-| `max_response_length` | 1024 | Max response token length |
 | `learning_rate` | 1e-6 | Actor learning rate |
 
-### Speed Tuning
-- **Faster:** Reduce `max_turns`, `n_agent`, `train_batch_size`
-- **Better learning:** Increase `max_turns` (slower per step)
+### RED Configuration
 
-### Checkpoint Management
-- Saves every `save_freq` steps to local + [HF Hub](https://huggingface.co/Phonsiri/CoDA-Gemma2-RED-v1)
-- **Keeps only 2 latest checkpoints** (auto-deletes old ones)
-- Auto-resumes from the latest checkpoint on restart
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `sft.enabled` | true | Enable SFT co-training |
+| `sft.loss_coef` | 0.1 | Base SFT loss coefficient |
+| `red.G` | 5.0 | Upper bound for RED weight |
+| `red.sft_entropy_ema_decay` | 0.99 | SFT entropy EMA smoothing |
+| `red.rl_entropy_ema_decay` | 0.99 | RL entropy EMA smoothing |
+| `algorithm.accuracy_aware_policy_shift` | true | Enable Part 2 |
+
+### Ablation Configurations
+
+```bash
+# Run 1: GRPO only (baseline)
+sft.enabled=false
+
+# Run 2: GRPO + fixed SFT (no dynamic weighting)
+sft.enabled=true red.G=1.0
+
+# Run 3: GRPO + RED (full)
+sft.enabled=true red.G=5.0 algorithm.accuracy_aware_policy_shift=true
+```
 
 ---
 
@@ -127,58 +175,49 @@ CoDA/
 │   ├── train.sh                 # Main training script & config
 │   ├── auto_resume.py           # Auto-resume from HF Hub checkpoints
 │   └── generate_sft_data.py     # Generate SFT training data
-├── preprocess/
-│   ├── download_and_process.sh  # Download retriever data
-│   └── scripts/
-│       └── data_process.sh      # Process QA datasets
 ├── search_r1/
 │   ├── llm_agent/
-│   │   └── generation.py        # Agent generation logic (Planner/Executor)
+│   │   └── generation.py        # Hierarchical agent (Planner/Executor)
 │   └── search/
 │       └── retrieval_server.py  # FastAPI retrieval server (FAISS)
 ├── verl/
 │   ├── trainer/
-│   │   ├── main_ppo.py          # Training entry point
-│   │   ├── config/
-│   │   │   └── grpo_trainer.yaml # Default config
+│   │   ├── main_ppo.py          # Entry point + RewardManager
 │   │   └── ppo/
-│   │       ├── ray_trainer.py   # Main training loop + checkpointing
-│   │       └── core_algos.py    # GRPO algorithm implementation
+│   │       ├── ray_trainer.py   # Training loop + RED integration
+│   │       └── core_algos.py    # GRPO + RED algorithms
 │   ├── workers/
-│   │   ├── actor/
-│   │   │   └── dp_actor.py      # Actor policy update
-│   │   ├── fsdp_workers.py      # FSDP distributed workers
-│   │   └── rollout/
-│   │       └── vllm_rollout/    # vLLM inference engine
+│   │   └── actor/
+│   │       └── dp_actor.py      # Actor update (RL + SFT loss)
 │   └── utils/
 │       ├── reward_score/
-│       │   └── qa_em.py         # Reward functions (F1, EM)
-│       ├── dataset/
-│       │   ├── rl_dataset.py    # RL training dataset
-│       │   └── sft_dataset.py   # SFT co-training dataset
-│       └── padding_utils.py     # SDPA padding utilities
-├── data/                        # Training data (generated, not in git)
-├── retrieval_launch.sh          # Launch retrieval server
-└── requirements.txt             # Python dependencies
+│       │   └── qa_em.py         # Reward functions (F1, EM, format)
+│       └── dataset/
+│           ├── rl_dataset.py    # RL training dataset
+│           └── sft_dataset.py   # SFT co-training dataset
+├── data/                        # Training data (generated)
+└── requirements.txt
 ```
 
 ---
 
-## 📊 Performance
+## 📊 W&B Metrics
 
-| Metric | Value |
-|--------|-------|
-| Step Time | ~4-5 min (H100 1x) |
-| Total Steps | 480 |
-| Estimated Duration | ~35 hours |
-| Samples per Step | 64 (32 prompts × 2 responses) |
-| Model Size | 2B parameters |
+### Key Metrics to Monitor
+
+| Metric | Description |
+|--------|-------------|
+| `critic/rewards/mean` | Overall reward per step |
+| `answer_f1/mean` | Answer quality (F1 score) |
+| `format_scores/mean` | XML format compliance |
+| `red/entropy_weight` | RED Part 1 — entropy-based weight |
+| `red/accuracy_factor` | RED Part 2 — accuracy-based multiplier |
+| `red/final_weight` | Combined RED weight |
+| `red/batch_accuracy` | Fraction of correct answers |
 
 ---
 
 ## 🔧 Restart After Server Reboot
-
-Data files are ephemeral on cloud servers. After restart:
 
 ```bash
 cd CoDA
@@ -199,6 +238,7 @@ Apache License 2.0
 
 ## 🙏 Acknowledgments
 
-- Based on [Search-R1](https://github.com/PeterGriffinJin/Search-R1) framework
-- Uses [verl](https://github.com/volcengine/verl) for RL training
+- Based on [CoDA](https://github.com/xxx/CoDA) — Context-Decoupled Hierarchical Agent
+- RED framework adapted from [RED](https://arxiv.org/abs/2505.xxxxx) — Recall-Extend Dynamics
+- Built on [Search-R1](https://github.com/PeterGriffinJin/Search-R1) and [verl](https://github.com/volcengine/verl)
 - Model: [Google Gemma-2-2B](https://huggingface.co/google/gemma-2-2b)
