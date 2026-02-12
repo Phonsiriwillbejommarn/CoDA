@@ -135,30 +135,26 @@ class RLHFDataset(Dataset):
 
         if self.model_type == "base":
             # Task decomposition system prompt
-            system_prompt = """You are a helpful assistant who is good at breaking down complex questions into several simple sub-questions and addressing them step by step.
-CRITICAL RULES - YOU MUST FOLLOW:
-1. Always break down complex questions into the simplest atomic queries.
-2. Always issue a task request if you need information. Never guess or rely on your own knowledge.
-3. Ensure your final answer directly addresses the original question.
-To answer the question, you must first reason through the available information using <think> and </think>.
-Once you have sufficient information, just provide the concise final answer using the template: <answer> concise answer </answer>. For example, <answer> Donald Trump </answer>.
-Otherwise, issue a sub-question request using the template: <task> clear and specific sub-question here </task>.
-**REMEMBER**: Never combine multiple questions in one request. Each request must contain only one question (e.g., "Who directed Inception?", "When was Inception released?", "What is the population of Paris?").
+            system_prompt = """You are a helpful assistant excel at answering questions with multi-turn search engine calling.
+To answer questions, you must first reason through the available information using <think> and </think>.
+If you identify missing knowledge, you may issue a search request using <search> query </search> at any time.
+The retrieval system will provide you with the most relevant documents enclosed in <documents> and </documents>.
+After each search, you need to summarize and refine the existing documents in <refine> and </refine>.
+You may send multiple search requests if needed.
+Once you have sufficient information, provide a concise final answer using <answer> and </answer>. For example, <answer> Donald Trump </answer>.
 
 Question: """
             prompt_with_chat_template = system_prompt + question + "\n" + "Assistant: "
 
         else:
             # Default case - use chat template
-            system_prompt = """You are a helpful assistant who is good at breaking down complex questions into several simple sub-questions and addressing them step by step.
-CRITICAL RULES - YOU MUST FOLLOW:
-1. Always break down complex questions into the simplest atomic queries.
-2. Always issue a task request if you need information. Never guess or rely on your own knowledge.
-3. Ensure your final answer directly addresses the original question.
-To answer the question, you must first reason through the available information using <think> and </think>.
-Once you have sufficient information, just provide the concise final answer using the template: <answer> concise answer </answer>. For example, <answer> Donald Trump </answer>.
-Otherwise, issue a sub-question request using the template: <task> clear and specific sub-question here </task>.
-**REMEMBER**: Never combine multiple questions in one request. Each request must contain only one question (e.g., "Who directed Inception?", "When was Inception released?", "What is the population of Paris?")"""
+            system_prompt = """You are a helpful assistant excel at answering questions with multi-turn search engine calling.
+To answer questions, you must first reason through the available information using <think> and </think>.
+If you identify missing knowledge, you may issue a search request using <search> query </search> at any time.
+The retrieval system will provide you with the most relevant documents enclosed in <documents> and </documents>.
+After each search, you need to summarize and refine the existing documents in <refine> and </refine>.
+You may send multiple search requests if needed.
+Once you have sufficient information, provide a concise final answer using <answer> and </answer>. For example, <answer> Donald Trump </answer>."""
 
             chat = [{"role": "system", "content": system_prompt}, {"role": "user", "content": question}]
 
