@@ -109,13 +109,13 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
-    actor_rollout_ref.rollout.n_agent=8 \
+    actor_rollout_ref.rollout.n_agent=4 \
     actor_rollout_ref.rollout.temperature=0.9 \
     actor_rollout_ref.actor.state_masking=true \
     trainer.logger=['tensorboard'] \
     trainer.n_gpus_per_node=$num_gpus \
     trainer.nnodes=1 \
-    trainer.save_freq=10 \
+    trainer.save_freq=2 \
     trainer.resume_step=$RESUME_STEP \
     trainer.val_before_train=false \
     trainer.test_freq=50 \
