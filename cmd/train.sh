@@ -22,7 +22,7 @@ MY_HF_TOKEN="API"
 # 4. Login W&B
 export WANDB_API_KEY=$MY_WANDB_KEY
 export WANDB_PROJECT="CoDA_RED_Project"
-export WANDB_MODE="disabled" # เปลี่ยนเป็น "online" หากต้องการดูผ่านเว็บ
+export WANDB_MODE="online" # เปิด W&B เพื่อดูกราฟผ่านเว็บ
 
 python3 -c "
 try:

@@ -70,8 +70,9 @@ def compute_f1_scores(prediction: str, ground_truths: list):
 
 def validate_format(prompt, response):
     """
-    validate the template format
-    return: (is valid)
+    Validate the template format with graduated scoring.
+    Returns a score between 0.0 and 1.0 based on how many tags are correctly used.
+    Each correctly paired tag contributes 1/N of the total score.
     """
     if '<refine>' in prompt:
         token_list = ['think', 'search', 'refine', 'answer']
@@ -79,18 +80,18 @@ def validate_format(prompt, response):
         token_list = ['think', 'task', 'answer']
 
     if not response:
-        return 0
+        return 0.0
 
+    score = 0.0
     for special_tags in token_list:
         start_token = f"<{special_tags}>"
         end_token = f"</{special_tags}>"
         start_count = response.count(start_token)
         end_count = response.count(end_token)
-        if start_count != end_count:
-            return 0
-        if start_count == 0:
-            return 0
-    return 1
+        # Give partial credit only if tag is present AND properly paired
+        if start_count > 0 and start_count == end_count:
+            score += 1.0 / len(token_list)
+    return score
 
 def em_check(prediction, golden_answers):
     if isinstance(golden_answers, str):

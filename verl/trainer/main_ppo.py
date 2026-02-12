@@ -240,8 +240,8 @@ class RewardManager():
             refine_score = score_info["refine_score"]
             score_record[uid]["group_accuracy"] = answer_score # หรือค่าเฉลี่ยของกลุ่ม
     
-            # คำนวณ Final Reward ของ CoDA เดิม
-            score_record[uid]["reward"] = (6 * answer_score - 3) + planner_format_score + executor_format_score + 0.5 * refine_score
+            # Final Reward: answer dominates, format/refine are small shaping signals
+            score_record[uid]["reward"] = (6 * answer_score - 3) + self.format_score * (planner_format_score + executor_format_score) + self.refine_score * refine_score
             # print(f"reward record result: {score_record}")
 
         for i in range(len(data)):
@@ -348,7 +348,7 @@ def main_task(config):
 
     # Note that we always use function-based RM for validation
     val_log_jsonl = f'log/val/{config.trainer.experiment_name}.jsonl'
-    val_reward_fn = RewardManager(tokenizer=tokenizer, num_examine=config.reward_model.val_num_examine, log_path=val_log_jsonl, reward_style=reward_style)
+    val_reward_fn = RewardManager(tokenizer=tokenizer, num_examine=config.reward_model.val_num_examine, log_path=val_log_jsonl, format_score=format_score, refine_score=refine_score, reward_style=reward_style)
 
     resource_pool_manager = ResourcePoolManager(resource_pool_spec=resource_pool_spec, mapping=mapping)
     if config.algorithm.get('filter_groups', {}).get('enable', False):

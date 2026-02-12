@@ -947,8 +947,10 @@ class RayPPOTrainer(object):
         )
 
         # --- RED Entropy Tracking (EMA) ---
-        self.h_rl_prev = torch.tensor(1.0)   # RL entropy EMA (previous step)
-        self.h_sft_prev = torch.tensor(1.0)  # SFT entropy EMA (previous step)
+        self.h_rl_prev = torch.tensor(1.0)   # RL entropy EMA (step t-2)
+        self.h_rl_curr = torch.tensor(1.0)   # RL entropy EMA (step t-1)
+        self.h_sft_prev = torch.tensor(1.0)  # SFT entropy EMA (step t-2)
+        self.h_sft_curr = torch.tensor(1.0)  # SFT entropy EMA (step t-1)
         red_G = self.config.get('red', {}).get('G', 5.0)
         red_sft_decay = self.config.get('red', {}).get('sft_entropy_ema_decay', 0.99)
         red_rl_decay = self.config.get('red', {}).get('rl_entropy_ema_decay', 0.99)
@@ -1114,12 +1116,12 @@ class RayPPOTrainer(object):
                                     sft_tensors['position_ids'] = torch.cumsum(sft_tensors['attention_mask'], dim=-1) - 1
                                     sft_tensors['position_ids'] = sft_tensors['position_ids'].clamp(min=0)
 
-                                # Compute RED weight using entropy tracking
+                                # Compute RED weight using delay-1 entropy tracking
                                 red_weight = core_algos.compute_red_weight(
                                     h_rl_prev=self.h_rl_prev,
-                                    h_rl_curr=self.h_rl_prev,  # Will be updated by actor metrics
+                                    h_rl_curr=self.h_rl_curr,
                                     h_sft_prev=self.h_sft_prev,
-                                    h_sft_curr=self.h_sft_prev,  # Will be updated by actor metrics
+                                    h_sft_curr=self.h_sft_curr,
                                     G=red_G
                                 )
 
@@ -1132,12 +1134,15 @@ class RayPPOTrainer(object):
                         actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
                         metrics.update(actor_output_metrics)
 
-                        # --- Update RED entropy EMA after actor update ---
+                        # --- Update RED entropy EMA after actor update (delay-1) ---
                         if self.sft_enabled and 'actor/rl_entropy' in metrics and 'actor/sft_entropy' in metrics:
-                            h_rl_curr = torch.tensor(metrics['actor/rl_entropy'])
-                            h_sft_curr = torch.tensor(metrics['actor/sft_entropy'])
-                            self.h_rl_prev = red_rl_decay * self.h_rl_prev + (1 - red_rl_decay) * h_rl_curr
-                            self.h_sft_prev = red_sft_decay * self.h_sft_prev + (1 - red_sft_decay) * h_sft_curr
+                            h_rl_new = torch.tensor(metrics['actor/rl_entropy'])
+                            h_sft_new = torch.tensor(metrics['actor/sft_entropy'])
+                            # Shift: prev ← curr, then update curr with new entropy
+                            self.h_rl_prev = self.h_rl_curr.clone()
+                            self.h_sft_prev = self.h_sft_curr.clone()
+                            self.h_rl_curr = red_rl_decay * self.h_rl_curr + (1 - red_rl_decay) * h_rl_new
+                            self.h_sft_curr = red_sft_decay * self.h_sft_curr + (1 - red_sft_decay) * h_sft_new
 
                     # validate
                     if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
