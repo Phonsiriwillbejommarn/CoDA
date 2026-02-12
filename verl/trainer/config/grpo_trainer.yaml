@@ -50,6 +50,8 @@ actor_rollout_ref:
     shuffle: False
     refine_score: 0.1
     format_score: 0.1
+    use_dynamic_bsz: True
+    ppo_max_token_len_per_gpu: 16384
     fsdp_config:
       param_offload: False
       grad_offload: False

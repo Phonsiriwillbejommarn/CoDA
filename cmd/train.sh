@@ -93,7 +93,7 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=1024 \
     data.max_start_length=2048 \
     data.max_obs_length=3072 \
-    max_turns=6 \
+    max_turns=2 \
     data.shuffle_train_dataloader=true \
     algorithm.adv_estimator=grpo \
     algorithm.red_enabled=true \
@@ -109,7 +109,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
-    actor_rollout_ref.rollout.n_agent=4 \
+    actor_rollout_ref.rollout.n_agent=2 \
     actor_rollout_ref.rollout.temperature=0.9 \
     actor_rollout_ref.actor.state_masking=true \
     trainer.logger=['tensorboard'] \
