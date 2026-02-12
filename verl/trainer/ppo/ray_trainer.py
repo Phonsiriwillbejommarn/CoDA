@@ -1066,6 +1066,13 @@ class RayPPOTrainer(object):
                         batch.batch.update(self.reward_fn.get_logging_scores_training(batch, self.global_steps))
                         batch.batch['token_level_scores'] = reward_tensor
 
+                        # Compute batch accuracy for RED Part 2 (Accuracy-aware Policy Shift)
+                        if 'answer_f1' in batch.batch:
+                            batch_accuracy = (batch.batch['answer_f1'] > 0).float().mean().item()
+                        else:
+                            batch_accuracy = 0.0
+                        metrics['red/batch_accuracy'] = batch_accuracy
+
                         # compute rewards. apply_kl_penalty if available
                         if not self.config.actor_rollout_ref.actor.use_kl_loss:
                             batch, kl_metrics = apply_kl_penalty(batch,
@@ -1124,11 +1131,30 @@ class RayPPOTrainer(object):
                                     h_sft_curr=self.h_sft_curr,
                                     G=red_G
                                 )
+                                entropy_weight = float(red_weight.item()) if torch.is_tensor(red_weight) else float(red_weight)
+
+                                # RED Part 2: Accuracy-aware Policy Shift
+                                if self.config.algorithm.get('accuracy_aware_policy_shift', False):
+                                    accuracy_factor = core_algos.compute_accuracy_weight(
+                                        batch_accuracy=batch_accuracy,
+                                        G=red_G
+                                    )
+                                    final_red_weight = entropy_weight * accuracy_factor
+                                    # Clamp final weight to [1, G^2] for stability
+                                    final_red_weight = max(1.0, min(red_G * red_G, final_red_weight))
+                                else:
+                                    accuracy_factor = 1.0
+                                    final_red_weight = entropy_weight
+
+                                # Log RED metrics
+                                metrics['red/entropy_weight'] = entropy_weight
+                                metrics['red/accuracy_factor'] = accuracy_factor
+                                metrics['red/final_weight'] = final_red_weight
 
                                 # Pass SFT batch and RED weight to actor
                                 batch.meta_info['sft_batch'] = sft_tensors
                                 batch.meta_info['sft_loss_coef'] = self.config.sft.get('loss_coef', 0.1)
-                                batch.meta_info['red_weight'] = float(red_weight.item()) if torch.is_tensor(red_weight) else float(red_weight)
+                                batch.meta_info['red_weight'] = final_red_weight
 
                             actor_output = self.actor_rollout_wg.update_actor(batch)
                         actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])

@@ -190,6 +190,31 @@ def compute_pi_offline_ratio(pi_current, r_mean_group):
     # ratio = pi / pi_offline
     return pi_current / (pi_offline + 1e-8)
 
+def compute_accuracy_weight(batch_accuracy, G=5.0):
+    """
+    RED Part 2: Accuracy-aware Policy Shift
+    ปรับ RED weight ตาม batch accuracy ของ RL rollouts
+    
+    - batch_accuracy ต่ำ (ตอบผิดเยอะ) → accuracy_factor > 1 → เพิ่ม SFT weight → เรียนจากครู
+    - batch_accuracy สูง (ตอบถูกเยอะ) → accuracy_factor < 1 → ลด SFT weight → เชื่อ self-policy
+    
+    Formula: accuracy_factor = G^(1 - 2 * accuracy)
+      accuracy=0.0 → factor = G^1 = G (max SFT boost)
+      accuracy=0.5 → factor = G^0 = 1 (neutral)
+      accuracy=1.0 → factor = G^(-1) = 1/G (minimum SFT)
+    
+    Args:
+        batch_accuracy: float in [0, 1], fraction of samples with answer_f1 > 0
+        G: upper bound (same G as entropy regulation)
+    Returns:
+        accuracy_factor: float, multiplier for RED weight
+    """
+    exponent = 1.0 - 2.0 * batch_accuracy
+    accuracy_factor = float(G) ** exponent
+    # Clamp to [1/G, G] for stability
+    accuracy_factor = max(1.0 / float(G), min(float(G), accuracy_factor))
+    return accuracy_factor
+
 
 def compute_policy_loss(old_log_prob, log_prob, advantages, eos_mask, cliprange, clip_ratio_c=3.0):
     """Adapted from https://github.com/huggingface/trl/blob/main/trl/trainer/ppo_trainer.py#L1122
