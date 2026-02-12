@@ -112,10 +112,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.n_agent=2 \
     actor_rollout_ref.rollout.temperature=0.9 \
     actor_rollout_ref.actor.state_masking=true \
-    trainer.logger=['tensorboard'] \
+    trainer.logger=['wandb'] \
     trainer.n_gpus_per_node=$num_gpus \
     trainer.nnodes=1 \
-    trainer.save_freq=2 \
+    trainer.save_freq=5 \
     trainer.resume_step=$RESUME_STEP \
     trainer.val_before_train=false \
     trainer.test_freq=50 \

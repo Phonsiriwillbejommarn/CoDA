@@ -745,8 +745,51 @@ class RayPPOTrainer(object):
                 commit_message=f"Checkpoint step {self.global_steps}",
             )
             logging.info(f"Pushed checkpoint to HF Hub: {repo_name}/{subfolder}")
+            
+            # Cleanup old global_step checkpoints on HF Hub (keep latest 2)
+            if 'global_step_' in subfolder:
+                self._cleanup_old_hf_checkpoints(api, repo_name, prefix='actor/global_step_', keep=2)
+            
         except Exception as e:
             logging.warning(f"Failed to push checkpoint to HF Hub: {e}")
+
+    def _cleanup_old_hf_checkpoints(self, api, repo_name, prefix='actor/global_step_', keep=2):
+        """Delete old checkpoint folders from HF Hub, keeping only the latest `keep` ones."""
+        try:
+            all_files = api.list_repo_files(repo_name)
+            # Find unique checkpoint folders
+            checkpoint_folders = set()
+            for f in all_files:
+                if f.startswith(prefix):
+                    # Extract folder name like 'actor/global_step_5'
+                    parts = f.split('/')
+                    if len(parts) >= 3:
+                        folder = '/'.join(parts[:3])  # actor/global_step_X
+                        checkpoint_folders.add(folder)
+            
+            if len(checkpoint_folders) <= keep:
+                return
+            
+            # Sort by step number and delete oldest
+            def get_step(folder_name):
+                try:
+                    return int(folder_name.split('_')[-1])
+                except:
+                    return 0
+            
+            sorted_folders = sorted(checkpoint_folders, key=get_step)
+            folders_to_delete = sorted_folders[:-keep]
+            
+            for folder in folders_to_delete:
+                files_in_folder = [f for f in all_files if f.startswith(folder)]
+                for file_path in files_in_folder:
+                    try:
+                        api.delete_file(file_path, repo_name)
+                    except:
+                        pass
+                logging.info(f"Deleted old checkpoint from HF Hub: {folder}")
+        except Exception as e:
+            logging.warning(f"Failed to cleanup old HF checkpoints: {e}")
 
     def _save_checkpoint(self):
         actor_local_path = os.path.join(self.config.trainer.default_local_dir, 'actor',
@@ -757,6 +800,19 @@ class RayPPOTrainer(object):
         
         # Push to HF Hub
         self._push_to_hf_hub(actor_local_path, subfolder=f'actor/global_step_{self.global_steps}')
+        
+        # Cleanup old local checkpoints (keep latest 2)
+        actor_dir = os.path.join(self.config.trainer.default_local_dir, 'actor')
+        if os.path.exists(actor_dir):
+            step_dirs = sorted(
+                [d for d in os.listdir(actor_dir) if d.startswith('global_step_')],
+                key=lambda x: int(x.split('_')[-1])
+            )
+            for old_dir in step_dirs[:-2]:
+                old_path = os.path.join(actor_dir, old_dir)
+                if os.path.isdir(old_path):
+                    shutil.rmtree(old_path)
+                    logging.info(f"Deleted old local checkpoint: {old_path}")
 
         if self.use_critic:
             critic_local_path = os.path.join(self.config.trainer.default_local_dir, 'critic',
