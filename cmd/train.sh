@@ -87,7 +87,7 @@ python3 -m verl.trainer.main_ppo \
     reward_model.reward_style="F1" \
     data.train_files=$DATA_DIR/train.parquet \
     data.val_files=$DATA_DIR/valid_500.parquet \
-    data.train_batch_size=128 \
+    data.train_batch_size=32 \
     data.val_batch_size=128 \
     data.max_prompt_length=3072 \
     data.max_response_length=1024 \
