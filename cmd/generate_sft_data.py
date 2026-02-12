@@ -64,24 +64,37 @@ def create_sft_examples_from_train(train_path='data/train.parquet', output_path=
             
         # Create expert trajectory in CoDA XML format
         search_query = question[:80]
+        
+        # 1. Construct Full Prompt with System Prompt (Must match rl_dataset.py)
+        system_prompt = """You are a helpful assistant excel at answering questions with multi-turn search engine calling.
+To answer questions, you must first reason through the available information using <think> and </think>.
+If you identify missing knowledge, you may issue a search request using <search> query </search> at any time.
+The retrieval system will provide you with the most relevant documents enclosed in <documents> and </documents>.
+After each search, you need to summarize and refine the existing documents in <refine> and </refine>.
+You may send multiple search requests if needed.
+Once you have sufficient information, provide a concise final answer using <answer> and </answer>. For example, <answer> Donald Trump </answer>."""
+        
+        full_prompt = f"{system_prompt}\nQuestion: {question}\nAssistant: "
+
+        # 2. Construct Response with Mock Documents (Environment simulation)
         response = f"""<think>
 I need to find information to answer this question. Let me search for relevant documents.
 </think>
-<search>
-{search_query}
-</search>
-<information>
-Based on the retrieved documents, I found relevant information about the topic.
-</information>
+<search>{search_query}</search>
+<documents>
+Title: {search_query}
+Content: {target} is the answer to the question "{question}". This document confirms that {target} matches the query.
+</documents>
+<refine>
+Based on the retrieved documents, I found that the answer is {target}.
+</refine>
 <think>
-Now I have enough information to answer the question. The answer is {target}.
+Now I have enough information to answer the question.
 </think>
-<finish>
-{target}
-</finish>"""
+<answer>{target}</answer>"""
         
         sft_data.append({
-            'prompt': question,
+            'prompt': full_prompt,
             'response': response
         })
     

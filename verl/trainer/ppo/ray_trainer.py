@@ -1163,15 +1163,15 @@ class RayPPOTrainer(object):
                 metrics.update(compute_throughout_metrics(batch=batch[planner_mask], timing_raw=timing_raw, n_gpus=n_gpus))
                 # metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
 
-                if metrics['critic/rewards/mean'] > self.best_reward:
-                    with _timer('save_best_checkpoint', timing_raw):
-                        self._save_checkpoint_best()
-                    self.best_reward = max(self.best_reward, metrics['critic/rewards/mean'])
+                # if metrics['critic/rewards/mean'] > self.best_reward:
+                #     with _timer('save_best_checkpoint', timing_raw):
+                #         self._save_checkpoint_best()
+                #     self.best_reward = max(self.best_reward, metrics['critic/rewards/mean'])
 
-                if 'val/test_score/mean' in metrics and metrics['val/test_score/mean'] > self.best_val:
-                    with _timer('save_best_checkpoint', timing_raw):
-                        self._save_checkpoint_best_val()
-                    self.best_val = max(self.best_val, metrics['val/test_score/mean'])
+                # if 'val/test_score/mean' in metrics and metrics['val/test_score/mean'] > self.best_val:
+                #     with _timer('save_best_checkpoint', timing_raw):
+                #         self._save_checkpoint_best_val()
+                #     self.best_val = max(self.best_val, metrics['val/test_score/mean'])
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)
