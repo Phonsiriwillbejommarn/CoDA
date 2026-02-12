@@ -13,7 +13,7 @@ export PYTHONUNBUFFERED=1
 num_gpus=1
 export DATA_DIR=data
 export BASE_MODEL='google/gemma-2-2b'
-export EXPERIMENT_NAME="CoDA-Gemma2-RED-v1"
+export EXPERIMENT_NAME="CoDA-Gemma2-RED-v2"
 
 # 3. API Keys
 MY_WANDB_KEY="API"
