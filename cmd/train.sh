@@ -117,6 +117,8 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=10 \
     trainer.resume_step=$RESUME_STEP \
+    trainer.val_before_train=false \
+    trainer.test_freq=50 \
     trainer.project_name=$WANDB_PROJECT \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.default_local_dir=verl_checkpoints/$EXPERIMENT_NAME \
