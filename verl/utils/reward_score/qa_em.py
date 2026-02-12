@@ -15,6 +15,12 @@
 import re
 import string
 import random
+
+def _get_target(ground_truth):
+    """Extract target from ground_truth, handling both str and dict formats."""
+    if isinstance(ground_truth, dict):
+        return ground_truth.get('target', ground_truth.get('answer', ''))
+    return ground_truth
 from collections import Counter
 
 def normalize_answer(s):
@@ -166,7 +172,7 @@ def compute_reward(responses_str, ground_truth, score_func=em_check):
     if answer is None:
         return 0
 
-    answer_score = score_func(answer, ground_truth['target'])
+    answer_score = score_func(answer, _get_target(ground_truth))
     return answer_score
 
 def compute_score_em(responses_str, ground_truth):
@@ -174,14 +180,14 @@ def compute_score_em(responses_str, ground_truth):
     if answer is None:
         return 0
     else:
-        return em_check(answer, ground_truth['target'])
+        return em_check(answer, _get_target(ground_truth))
 
 def compute_score_f1(responses_str, ground_truth):
     answer = extract_solution(responses_str)
     if answer is None:
         return 0
     else:
-        return compute_f1_scores(answer, ground_truth['target'])
+        return compute_f1_scores(answer, _get_target(ground_truth))
 
 
 def compute_score_cem(responses_str, ground_truth):
@@ -189,7 +195,7 @@ def compute_score_cem(responses_str, ground_truth):
     if answer is None:
         return 0
     else:
-        return cover_em_check(answer, ground_truth['target'])
+        return cover_em_check(answer, _get_target(ground_truth))
 
 
 def compute_information_score_subem(responses_str, ground_truth):
@@ -197,10 +203,11 @@ def compute_information_score_subem(responses_str, ground_truth):
     
     if information is None:
         return 0.0
-    elif 'no' in ground_truth['target'] or 'yes' in ground_truth['target']:
-        return 0.5
     else:
-        return cover_em_check(information, ground_truth['target'])
+        target = _get_target(ground_truth)
+        if isinstance(target, str) and target in ('no', 'yes'):
+            return 0.5
+        return cover_em_check(information, target)
 
 def compute_information_reverse_rank(responses_str, ground_truth):
     doc_list = extract_information_list(responses_str)
@@ -208,11 +215,12 @@ def compute_information_reverse_rank(responses_str, ground_truth):
     
     if doc_list is None:
         return 0.0
-    elif 'no' in ground_truth['target'] or 'yes' in ground_truth['target']:
-        return 0.5
     else:
+        target = _get_target(ground_truth)
+        if isinstance(target, str) and target in ('no', 'yes'):
+            return 0.5
         for idx, doc in enumerate(doc_list):
-            if cover_em_check(doc, ground_truth['target']):
+            if cover_em_check(doc, target):
                 info_score += 1 / float(idx + 1)
     return info_score
 
@@ -221,4 +229,4 @@ def compute_refine_score_subem(responses_str, ground_truth):
     if refined_info is None:
         return 0.0
     else:
-        return cover_em_check(refined_info, ground_truth['target'])
+        return cover_em_check(refined_info, _get_target(ground_truth))
