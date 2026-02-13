@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Generate SFT training data for CoDA.
-Creates expert-style trajectories showing the CoDA XML workflow format.
-Supports multiple patterns: single-search, multi-hop, noisy-documents, direct-answer.
+Creates expert-style trajectories with type-aware patterns:
+- Math questions (GSM8K) → Direct CoT reasoning, no search
+- QA questions (HotpotQA) → Search-based patterns with CoT
 """
 import pandas as pd
 import json
@@ -15,7 +16,6 @@ After each search, you need to summarize and refine the existing documents in <r
 You may send multiple search requests if needed.
 Once you have sufficient information, provide a concise final answer using <answer> and </answer>. For example, <answer> Donald Trump </answer>."""
 
-# Noisy document templates to mix with real info
 NOISE_DOCS = [
     "Title: Popular Culture\nContent: This article discusses various topics in popular culture and entertainment that are not directly related to the query.",
     "Title: Historical Overview\nContent: A broad overview of historical events spanning multiple centuries. Further research may be needed for specific details.",
@@ -23,11 +23,54 @@ NOISE_DOCS = [
 ]
 
 
+# =============================================================================
+# MATH PATTERNS (for GSM8K — no search needed)
+# =============================================================================
+
+def make_math_direct_cot(question, target, search_query):
+    """Math: Direct CoT reasoning → answer (70% of math)"""
+    cot = random.choice([
+        f'Let me solve this step by step.\n\nQuestion: "{question}"\n\nI need to work through the math carefully:\n- First, identify the key numbers and operations\n- Then calculate step by step\n- The answer should be {target}',
+        f'This is a math problem. Let me reason through it:\n\nGiven: "{question}"\n\nStep 1: Identify what we need to find\nStep 2: Set up the calculation\nStep 3: Compute the result\n\nAfter working through the math, the answer is {target}.',
+        f'Let me break down this math problem: "{question}"\n\nTo solve this:\n1. Parse the numbers and relationships\n2. Apply the correct operations\n3. Calculate carefully\n\nThe final answer is {target}.',
+        f'I can solve this mathematically without searching.\n\nProblem: "{question}"\n\nWorking through the calculations:\n- Analyzing the given information\n- Performing the arithmetic\n- Verifying the result\n\nThe answer is {target}.',
+    ])
+    
+    response = f"""<think>
+{cot}
+</think>
+<answer>{target}</answer>"""
+    return response
 
 
+def make_math_with_verification(question, target, search_query):
+    """Math: Think → answer → verify (30% of math)"""
+    cot_solve = random.choice([
+        f'Let me work through this problem: "{question}"\n\nI need to:\n1. Understand what\'s being asked\n2. Identify the relevant numbers\n3. Perform the calculation step by step',
+        f'This math problem requires careful calculation.\n\nQuestion: "{question}"\n\nLet me identify the approach and solve it systematically.',
+    ])
+    
+    cot_verify = random.choice([
+        f'Let me verify my answer of {target}.\n\nDouble-checking the calculation:\n- Re-reading the question to make sure I understood correctly\n- Verifying each step of my computation\n- The answer {target} is confirmed correct.',
+        f'I should double-check: is {target} really the right answer?\n\nVerification:\n- Going back through each step\n- The math checks out\n- I\'m confident the answer is {target}.',
+    ])
+    
+    response = f"""<think>
+{cot_solve}
+</think>
+<think>
+{cot_verify}
+</think>
+<answer>{target}</answer>"""
+    return response
 
-def make_pattern_single_search(question, target, search_query):
-    """Pattern 1: Single search → refine → answer (60% of data)"""
+
+# =============================================================================
+# QA PATTERNS (for HotpotQA — search-based)
+# =============================================================================
+
+def make_qa_single_search(question, target, search_query):
+    """QA: Single search → refine → answer (50% of QA)"""
     cot_plan = random.choice([
         f'Let me break down this question: "{question}"\nI need to identify the key entity and find specific information about it. The most effective approach would be to search directly for the core topic.',
         f'To answer "{question}", I need to:\n1. Identify what specific information is being asked\n2. Search for relevant documents\n3. Extract the answer from reliable sources',
@@ -60,8 +103,8 @@ Based on the retrieved documents, I found that the answer is {target}.
     return response
 
 
-def make_pattern_multi_hop(question, target, search_query):
-    """Pattern 2: Two searches → multi-hop reasoning (20% of data)"""
+def make_qa_multi_hop(question, target, search_query):
+    """QA: Two searches → multi-hop reasoning (30% of QA)"""
     words = search_query.split()
     mid = max(len(words) // 2, 2)
     query1 = ' '.join(words[:mid])
@@ -117,8 +160,8 @@ After two searches, I now have the complete information. The answer to the quest
     return response
 
 
-def make_pattern_noisy_docs(question, target, search_query):
-    """Pattern 3: Search with noisy/irrelevant docs mixed in (10% of data)"""
+def make_qa_noisy_docs(question, target, search_query):
+    """QA: Search with noisy docs, must filter (20% of QA)"""
     noise1 = random.choice(NOISE_DOCS)
     noise2 = random.choice(NOISE_DOCS)
     
@@ -152,23 +195,63 @@ The search returned several documents. After filtering out irrelevant results, t
     return response
 
 
-def make_pattern_direct_answer(question, target, search_query):
-    """Pattern 4: Direct answer with CoT reasoning, no search (10% of data)"""
-    cot_direct = random.choice([
-        f'Let me think about this question: "{question}"\n\nBreaking it down:\n1. The question asks for a specific piece of information\n2. Based on the context and information available, the answer is {target}\n3. I\'m confident enough to answer directly without searching.',
-        f'Analyzing: "{question}"\n\nI can reason through this:\n- The question is asking for a factual answer\n- From what I know, {target} is the correct answer\n- No additional search is needed as this is well-established information.',
-        f'This is a question I can answer through reasoning: "{question}"\n\nMy thought process:\n- Identifying what\'s being asked\n- The answer should be {target} based on available knowledge\n- I don\'t need to search for additional verification.',
-    ])
-    
-    response = f"""<think>
-{cot_direct}
-</think>
-<answer>{target}</answer>"""
-    return response
+# =============================================================================
+# Main
+# =============================================================================
+
+MATH_PATTERNS = [
+    (make_math_direct_cot,        0.70),  # 70% direct CoT
+    (make_math_with_verification, 0.30),  # 30% CoT + verify
+]
+
+QA_PATTERNS = [
+    (make_qa_single_search, 0.50),  # 50% single search
+    (make_qa_multi_hop,     0.30),  # 30% multi-hop
+    (make_qa_noisy_docs,    0.20),  # 20% noisy docs
+]
 
 
-def create_sft_examples_from_train(train_path='data/train.parquet', output_path='data/sft_train.parquet', n_samples=500):
-    """Create SFT examples from training data with multiple patterns."""
+def detect_question_type(row):
+    """Detect if question is math (GSM8K) or QA (HotpotQA)."""
+    qid = str(row.get('id', row.get('extra_info', {}).get('id', '')))
+    if 'gsm8k' in qid.lower():
+        return 'math'
+    # Check if answer looks numeric
+    reward_model = row.get('reward_model', {})
+    if isinstance(reward_model, str):
+        try:
+            reward_model = json.loads(reward_model)
+        except:
+            reward_model = {}
+    if isinstance(reward_model, dict):
+        gt = reward_model.get('ground_truth', {})
+        if isinstance(gt, dict):
+            t = gt.get('target', gt.get('answer', ''))
+            if isinstance(t, list):
+                t = t[0] if t else ''
+            t = str(t).strip()
+            # Numeric answers are likely math
+            try:
+                float(t.replace(',', '').replace('$', '').replace('%', ''))
+                return 'math'
+            except:
+                pass
+    return 'qa'
+
+
+def select_pattern(patterns):
+    """Weighted random selection from pattern list."""
+    r = random.random()
+    cumulative = 0
+    for fn, weight in patterns:
+        cumulative += weight
+        if r <= cumulative:
+            return fn
+    return patterns[0][0]
+
+
+def create_sft_examples_from_train(train_path='data/train.parquet', output_path='data/sft_train.parquet', n_samples=1500):
+    """Create SFT examples with type-aware patterns."""
     
     df = pd.read_parquet(train_path)
     print(f"Loaded {len(df)} rows from {train_path}")
@@ -176,16 +259,9 @@ def create_sft_examples_from_train(train_path='data/train.parquet', output_path=
     if len(df) > n_samples:
         df = df.sample(n=n_samples, random_state=42)
     
-    # Pattern distribution
-    patterns = [
-        (make_pattern_single_search, 0.60),  # 60% single search
-        (make_pattern_multi_hop,     0.20),  # 20% multi-hop
-        (make_pattern_noisy_docs,    0.10),  # 10% noisy docs
-        (make_pattern_direct_answer, 0.10),  # 10% direct answer
-    ]
-    
     sft_data = []
-    pattern_counts = {fn.__name__: 0 for fn, _ in patterns}
+    type_counts = {'math': 0, 'qa': 0}
+    pattern_counts = {}
     
     for idx, row in df.iterrows():
         # Extract question
@@ -228,15 +304,17 @@ def create_sft_examples_from_train(train_path='data/train.parquet', output_path=
         if not target:
             continue
         
-        # Select pattern by weighted random
-        r = random.random()
-        cumulative = 0
-        selected_fn = make_pattern_single_search
-        for fn, weight in patterns:
-            cumulative += weight
-            if r <= cumulative:
-                selected_fn = fn
-                break
+        # Detect type and select appropriate pattern
+        q_type = detect_question_type(row)
+        type_counts[q_type] += 1
+        
+        if q_type == 'math':
+            selected_fn = select_pattern(MATH_PATTERNS)
+        else:
+            selected_fn = select_pattern(QA_PATTERNS)
+        
+        fn_name = selected_fn.__name__
+        pattern_counts[fn_name] = pattern_counts.get(fn_name, 0) + 1
         
         search_query = question[:80]
         full_prompt = f"{SYSTEM_PROMPT}\nQuestion: {question}\nAssistant: "
@@ -246,15 +324,18 @@ def create_sft_examples_from_train(train_path='data/train.parquet', output_path=
             'prompt': full_prompt,
             'response': response,
         })
-        pattern_counts[selected_fn.__name__] += 1
     
     sft_df = pd.DataFrame(sft_data)
     sft_df.to_parquet(output_path, index=False)
     
-    print(f"\nCreated {len(sft_df)} SFT examples → {output_path}")
-    print("Pattern distribution:")
-    for name, count in pattern_counts.items():
-        pct = count / len(sft_df) * 100 if sft_df.shape[0] > 0 else 0
+    print(f"\n✅ Created {len(sft_df)} SFT examples → {output_path}")
+    print(f"\nType distribution:")
+    for t, count in type_counts.items():
+        pct = count / len(sft_df) * 100 if len(sft_df) > 0 else 0
+        print(f"  {t}: {count} ({pct:.0f}%)")
+    print(f"\nPattern distribution:")
+    for name, count in sorted(pattern_counts.items()):
+        pct = count / len(sft_df) * 100 if len(sft_df) > 0 else 0
         print(f"  {name}: {count} ({pct:.0f}%)")
     
     return sft_df
